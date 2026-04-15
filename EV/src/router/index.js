@@ -6,6 +6,7 @@ import EVVideoBoard from '../views/EVVideoBoard.vue'
 import EVUserDashboard from '../views/EVUserDashboard.vue'
 // ✅ 1. 새로 만든 DB 사용량 페이지를 불러옵니다(Import)
 import EvDatabaseUsage from '../views/EvDatabaseUsage.vue'
+import MyPage from '../views/MyPage.vue'
 
 const routes = [
   {
@@ -35,9 +36,14 @@ const routes = [
   },
   // ✅ 2. DB 사용량 대시보드 경로를 추가합니다
   {
-    path: '/EvDatabaseUsage', 
+    path: '/EvDatabaseUsage',
     name: 'EvDatabaseUsage',
     component: EvDatabaseUsage
+  },
+  {
+    path: '/mypage',
+    name: 'MyPage',
+    component: MyPage
   }
 ]
 
