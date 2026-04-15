@@ -48,7 +48,7 @@
         <div class="glass-card">
           <h3 class="card-label white-important">현재 충전 상태</h3>
           <div class="charge-flex">
-            <div class="ring-gauge white-important">{{ chargePercent }}%</div>
+            <div class="ring-gauge white-important">{{ Math.round(chargePercent) }}%</div>
             <div class="charge-stats">
               <p class="kw white-important kw-size">{{ currentKw }} kW</p>
               <p class="min white-important min-size">{{ chargePercent >= 100 ? '충전 완료' : `예상 ${minutesLeft}분 남음` }}</p>
