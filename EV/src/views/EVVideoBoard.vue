@@ -50,7 +50,7 @@
             </div>
             <img
               v-if="cctv && cctv.station"
-              :src="`http://localhost:${getPythonPort(cctv.station)}/stream`"
+              :src="getStreamUrl(cctv.station)"
               class="video-img"
               alt="LIVE VIDEO"
               @error="reloadStream"
@@ -143,6 +143,19 @@ import { useRouter } from 'vue-router'
 import Chart from 'chart.js/auto'
 import axios from 'axios'
 
+// Cloudflare Quick Tunnel URLs (재기동 시 새로 발급받아 교체 필요)
+const STREAM_URL_MAP = {
+  'A-01': 'https://according-lines-ccd-detector.trycloudflare.com',
+  'A-02': 'https://prince-concerts-impaired-distribute.trycloudflare.com',
+  'B-01': 'https://fence-early-monitors-layers.trycloudflare.com',
+  'B-02': 'https://return-school-tract-chicken.trycloudflare.com',
+}
+
+const getStreamUrl = (stationName) => {
+  return (STREAM_URL_MAP[stationName] || STREAM_URL_MAP['A-01']) + '/stream'
+}
+
+// (기존 getPythonPort 는 호환 유지, 타 파일에서 쓰일 경우 대비)
 const getPythonPort = (stationName) => {
   if (!stationName) return 5001;
   const num = parseInt(stationName.replace(/[^0-9]/g, ''));
