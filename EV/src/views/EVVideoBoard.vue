@@ -151,7 +151,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import Chart from 'chart.js/auto'
 import axios from 'axios'
-import { mockDashboard, isDemoMode, DEMO_STREAM_URL, DEMO_STREAM_VIDEO } from '../demo/mockData'
+import { mockDashboard, makeLiveDashboard, isDemoMode, DEMO_STREAM_URL, DEMO_STREAM_VIDEO } from '../demo/mockData'
 
 // Stream base URLs are read from build-time env (Vercel env vars). This kills
 // the old Quick Tunnel hardcode — set VITE_STREAM_A01..B02 to your fixed
@@ -280,7 +280,7 @@ const handleLogout = () => {
 };
 
 const fetchDashboard = async () => {
-  if (isDemoMode()) { await applyDashboard(mockDashboard); return; }
+  if (isDemoMode()) { await applyDashboard(makeLiveDashboard()); return; }
   try {
     const res = await axios.get('http://localhost:8080/api/dashboard');
     const ok = res.data && (Array.isArray(res.data.cctv) ? res.data.cctv.length > 0 : false);
@@ -288,7 +288,7 @@ const fetchDashboard = async () => {
     await applyDashboard(res.data);
   } catch (err) {
     console.warn('[demo] dashboard fallback');
-    await applyDashboard(mockDashboard);
+    await applyDashboard(makeLiveDashboard());
   }
 }
 

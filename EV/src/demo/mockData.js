@@ -75,6 +75,76 @@ export const mockDashboard = {
   },
 }
 
+// Live-looking /api/dashboard. Each call nudges values so the portfolio demo
+// has motion: bar chart values ripple, occupancy waves, today-charge grows
+// slowly, waiting/charging counts drift within plausible ranges.
+let _dashTick = 0
+const _dashState = {
+  todayCharge: mockDashboard.summary.todayCharge,
+  illegalCount: mockDashboard.summary.illegalCount,
+  normalTotal: mockDashboard.charts.normal,
+  violationTotal: mockDashboard.charts.violation,
+  powerData: [...mockDashboard.charts.powerData],
+}
+
+export const makeLiveDashboard = () => {
+  _dashTick++
+
+  // Power bar — each bar wobbles smoothly with a per-bar phase offset.
+  const powerData = _dashState.powerData.map((v, i) => {
+    const target = 40 + 25 * Math.sin((_dashTick + i * 2) / 5) + (Math.random() - 0.5) * 4
+    const next = v * 0.7 + target * 0.3
+    _dashState.powerData[i] = next
+    return Number(next.toFixed(1))
+  })
+
+  // Charger state snapshot: totals stay near 10 stations.
+  const occupied = 2 + Math.round(Math.abs(Math.sin(_dashTick / 4)) * 3)  // 2~5
+  const complete = 3 + Math.round(Math.abs(Math.cos(_dashTick / 3)) * 3)  // 3~6
+  const waiting  = 2 + Math.round(Math.abs(Math.sin(_dashTick / 5 + 1)) * 3) // 2~5
+
+  // Violation ratio trends upward slowly.
+  if (Math.random() < 0.25) _dashState.normalTotal += 1
+  if (Math.random() < 0.08) _dashState.violationTotal += 1
+
+  // Occupancy waveform: 10 points sliding each call.
+  const occupancy = Array.from({ length: 10 }, (_, i) =>
+    0.55 + 0.20 * Math.sin((_dashTick + i) / 3.2) + (Math.random() - 0.5) * 0.05
+  )
+  const powerLabels = Array.from({ length: 10 }, (_, i) => {
+    const h = 9 + i
+    return h < 10 ? '0' + h : '' + h
+  })
+
+  // Summary grows + drifts.
+  if (Math.random() < 0.25) _dashState.todayCharge += 1
+  if (Math.random() < 0.05) _dashState.illegalCount += 1
+  const waitingCount = 3 + Math.round(Math.abs(Math.sin(_dashTick / 6)) * 5)
+  const occupancyRate = Math.round(occupancy[occupancy.length - 1] * 100)
+
+  // Keep cctv + machines from the static mock (plate badges must match video).
+  return {
+    cctv: mockDashboard.cctv,
+    machines: mockDashboard.machines,
+    summary: {
+      todayCharge:   _dashState.todayCharge,
+      illegalCount:  _dashState.illegalCount,
+      waitingCount,
+      occupancyRate,
+    },
+    charts: {
+      powerLabels,
+      powerData,
+      charging: occupied,
+      complete,
+      waiting,
+      normal:    _dashState.normalTotal,
+      violation: _dashState.violationTotal,
+      occupancy,
+    },
+  }
+}
+
 // /api/db/usage — static baseline used as fallback for error cases.
 export const mockDbUsage = {
   accuracy: '96.4%',
