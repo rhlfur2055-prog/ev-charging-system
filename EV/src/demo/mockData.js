@@ -85,7 +85,26 @@ const _dashState = {
   normalTotal: mockDashboard.charts.normal,
   violationTotal: mockDashboard.charts.violation,
   powerData: [...mockDashboard.charts.powerData],
+  machines: mockDashboard.machines.map(m => ({ ...m })),
+  alertLog: [
+    { time: '13:02:20', msg: '미등록 차량 감지 (386마 1144)', type: 'danger' },
+    { time: '13:05:01', msg: '63러 2314 충전 시작',             type: 'info' },
+    { time: '12:50:11', msg: '62서 9811 충전 완료',             type: 'success' },
+  ],
 }
+
+const _sampleEvents = [
+  { msg: '63러 2314 충전 시작',             type: 'info' },
+  { msg: '63러 2314 충전 완료',             type: 'success' },
+  { msg: '56나 1425 충전 시작',             type: 'info' },
+  { msg: '56나 1425 충전 완료',             type: 'success' },
+  { msg: '152가 5012 충전 시작',            type: 'info' },
+  { msg: '152가 5012 충전 완료',            type: 'success' },
+  { msg: '미등록 차량 감지 (386마 1144)',   type: 'danger' },
+  { msg: '장시간 주차 감지 (A-02)',         type: 'danger' },
+  { msg: '충전 대기열 자동 진행 (A-01)',    type: 'info' },
+  { msg: '충전기 점검 알림 (B-01)',         type: 'danger' },
+]
 
 export const makeLiveDashboard = () => {
   _dashTick++
@@ -122,10 +141,36 @@ export const makeLiveDashboard = () => {
   const waitingCount = 3 + Math.round(Math.abs(Math.sin(_dashTick / 6)) * 5)
   const occupancyRate = Math.round(occupancy[occupancy.length - 1] * 100)
 
-  // Keep cctv + machines from the static mock (plate badges must match video).
+  // Machines: charging stations swap status occasionally, kWh drifts.
+  const machines = _dashState.machines.map(m => {
+    let { stationNumber, status, usage } = m
+    if (status === 'charging') {
+      usage = Math.max(0, usage + (Math.random() - 0.3) * 1.2)   // mostly grows
+      if (Math.random() < 0.04) { status = 'available'; usage = 0 } // finish
+    } else if (status === 'available') {
+      if (Math.random() < 0.06) { status = 'charging'; usage = 5 + Math.random() * 8 } // start
+    } else if (status === 'maintenance') {
+      if (Math.random() < 0.02) { status = 'available'; usage = 0 } // repair done
+    }
+    m.status = status; m.usage = usage
+    return { stationNumber, status, usage: Number(usage.toFixed(1)) }
+  })
+
+  // Event log: 12% chance per tick to push a new event onto the top of the log.
+  if (Math.random() < 0.45) {
+    const ev = _sampleEvents[Math.floor(Math.random() * _sampleEvents.length)]
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    const ss = String(now.getSeconds()).padStart(2, '0')
+    _dashState.alertLog.unshift({ time: `${hh}:${mm}:${ss}`, msg: ev.msg, type: ev.type })
+    _dashState.alertLog = _dashState.alertLog.slice(0, 8)
+  }
+
   return {
     cctv: mockDashboard.cctv,
-    machines: mockDashboard.machines,
+    machines,
+    eventLog: _dashState.alertLog.slice(),
     summary: {
       todayCharge:   _dashState.todayCharge,
       illegalCount:  _dashState.illegalCount,

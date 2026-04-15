@@ -102,17 +102,9 @@
             <div class="live-indicator"><span class="blink-dot"></span>LIVE</div>
           </div>
           <div class="log-container">
-            <div class="log-item danger">
-              <span class="log-time">13:02:20</span>
-              <span class="log-msg">미등록 차량 감지 (386마 1144)</span>
-            </div>
-            <div class="log-item info">
-              <span class="log-time">13:05:01</span>
-              <span class="log-msg">63러 2314 충전 시작</span>
-            </div>
-            <div class="log-item success">
-              <span class="log-time">12:50:11</span>
-              <span class="log-msg">62서 9811 충전 완료</span>
+            <div v-for="(ev, i) in eventLog" :key="i" :class="['log-item', ev.type]">
+              <span class="log-time">{{ ev.time }}</span>
+              <span class="log-msg">{{ ev.msg }}</span>
             </div>
           </div>
         </div>
@@ -203,6 +195,11 @@ const cctvList = ref([])
 const router = useRouter()
 const machines = ref([])
 const chartData = ref({})
+const eventLog = ref([
+  { time: '13:02:20', msg: '미등록 차량 감지 (386마 1144)', type: 'danger' },
+  { time: '13:05:01', msg: '63러 2314 충전 시작',             type: 'info' },
+  { time: '12:50:11', msg: '62서 9811 충전 완료',             type: 'success' },
+])
 
 let chart1, chart2, chart3, miniChart
 const currentDate = ref(''); const currentTimeOnly = ref('')
@@ -264,6 +261,7 @@ const applyDashboard = async (data) => {
   summary.value   = data.summary  || summary.value;
   machines.value  = data.machines || machines.value;
   chartData.value = data.charts   || chartData.value;
+  if (Array.isArray(data.eventLog) && data.eventLog.length) eventLog.value = data.eventLog;
   await nextTick();
   if (chartData.value.powerLabels) initCharts();
 };
