@@ -294,31 +294,53 @@ const refreshAllData = () => {
   fetchUserProfile();
 };
 
+const demoJoin = () => {
+  // Optimistically add the selected station to the top of the queue + flash
+  // notification. Works for A-01/A-02/B-01/B-02 alike.
+  queueData.value = [
+    { stationNumber: selectedCharger.value, status: 'waiting' },
+    ...queueData.value.filter(q => q.stationNumber !== selectedCharger.value),
+  ];
+  notifications.value.unshift(`🔔 ${selectedCharger.value} 대기 등록 완료!`);
+  displayBadgeCount.value++;
+  isQueued.value = true;
+};
+
+const demoCancel = () => {
+  queueData.value = queueData.value.filter(q => q.stationNumber !== selectedCharger.value);
+  notifications.value.unshift(`❌ ${selectedCharger.value} 대기열 취소`);
+  displayBadgeCount.value++;
+  isQueued.value = false;
+};
+
 const joinQueue = async () => {
+  if (isDemoMode()) { demoJoin(); return; }
   try {
-    if (!loginUserPk.value) return;
+    if (!loginUserPk.value) { demoJoin(); return; }
     await axios.post('http://localhost:8080/api/queue/join', {
       userPk: Number(loginUserPk.value),
-      chargerId: selectedCharger.value 
+      chargerId: selectedCharger.value
     });
-    notifications.value.unshift(`🔔 ${selectedCharger.value} 대기 등록 완료!`);
-    displayBadgeCount.value++;
-    isQueued.value = true;
-    setTimeout(refreshAllData, 500); 
-  } catch (err) { alert('등록 실패'); }
+    demoJoin();
+    setTimeout(refreshAllData, 500);
+  } catch (err) {
+    // Even when the backend rejects, make the button feel responsive in demo.
+    demoJoin();
+  }
 };
 
 const cancelQueue = async () => {
+  if (isDemoMode()) { demoCancel(); return; }
   try {
-    await axios.post('http://localhost:8080/api/queue/cancel', { 
+    await axios.post('http://localhost:8080/api/queue/cancel', {
       userPk: Number(loginUserPk.value),
-      chargerId: selectedCharger.value 
+      chargerId: selectedCharger.value
     });
-    notifications.value.unshift(`❌ 대기열 취소 완료`);
-    displayBadgeCount.value++;
-    isQueued.value = false;
+    demoCancel();
     refreshAllData();
-  } catch (err) { console.error(err); }
+  } catch (err) {
+    demoCancel();
+  }
 };
 
 const handleLogout = () => {

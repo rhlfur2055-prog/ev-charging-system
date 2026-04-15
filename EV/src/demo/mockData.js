@@ -140,12 +140,13 @@ export const makeLiveDbUsage = () => {
 }
 
 // Shared helper: true when the portfolio demo should bypass the real backend.
-// Flipped via VITE_USE_MOCK=true (in .env.local or Vercel env). Also true
-// after a demo-account login even if VITE_USE_MOCK was unset.
+// Defaults to TRUE for this portfolio project so Vercel deploys "just work"
+// without env-var gymnastics. To hit a real backend, set VITE_USE_MOCK=false
+// explicitly in your .env / Vercel project settings.
 export const isDemoMode = () => {
-  if (import.meta.env.VITE_USE_MOCK === 'true') return true
-  const t = (typeof localStorage !== 'undefined' && localStorage.getItem('accessToken')) || ''
-  return t.startsWith('demo.token')
+  const v = import.meta.env.VITE_USE_MOCK
+  if (v === 'false' || v === false) return false   // explicit opt-out
+  return true
 }
 
 // Static CCTV stills served by Vite from /public/demo/*.jpg. Used when no
