@@ -19,8 +19,10 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[8]
 
-CAMERA_NAME = "A02"
-VIDEO_FILE = "car9.mp4"
+CAMERA_NAME = os.getenv("EV_CAMERA_NAME", "A02")
+VIDEO_FILE  = os.getenv("EV_VIDEO_FILE", "car9.mp4")
+STATION_PK  = int(os.getenv("EV_STATION_PK", "2"))
+FLASK_PORT  = int(os.getenv("EV_FLASK_PORT", "5002"))
 
 SAVE_ROOT   = os.getenv("EV_PLATE_LOGS_DIR", str(PROJECT_ROOT / "plate_logs"))
 MODEL_PATH  = os.getenv("EV_MODEL_PATH",     str(PROJECT_ROOT / "MBCCARNUM2" / "datasets" / "runs" / "detect" / "carnum2_yolo8" / "weights" / "best.pt"))
@@ -187,7 +189,7 @@ def run_analysis():
                                 payload = {
                                     "plateNumber": stable_plate,
                                     "isEv": is_ev,
-                                    "stationPk": 2,
+                                    "stationPk": STATION_PK,
 
                                     # ★ 여기 핵심
                                     "confidence": float(final_acc),
@@ -226,4 +228,4 @@ def stream():
 
 if __name__ == "__main__":
     threading.Thread(target=run_analysis, daemon=True).start()
-    app.run(host="0.0.0.0", port=5002, threaded=True, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=FLASK_PORT, threaded=True, debug=False, use_reloader=False)

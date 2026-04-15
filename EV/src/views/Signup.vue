@@ -92,6 +92,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { isDemoMode } from '../demo/mockData'
 
 const router = useRouter()
 
@@ -110,7 +111,33 @@ const signup = async () => {
     return
   }
 
+  // 데모 모드: 백엔드 호출 없이 클라이언트에서 검증 + 성공 처리
+  const demoSignup = () => {
+    const rules = [
+      [/^[a-zA-Z0-9]{4,12}$/, loginId.value, '아이디는 영어+숫자 4~12자리여야 합니다.'],
+      [/^.{4,}$/,             password.value, '비밀번호는 최소 4자리 이상이어야 합니다.'],
+      [/^[가-힣]{2,10}$/,      name.value,     '이름은 한글 2~10자여야 합니다.'],
+      [/^010-\d{4}-\d{4}$/,   phone.value,    '전화번호 형식은 010-0000-0000 입니다.'],
+      [/^\d{2,3}[가-힣]\d{4}$/, plateNumber.value, '차량번호 형식이 올바르지 않습니다. 예: 12가3456'],
+    ]
+    for (const [re, v, msg] of rules) {
+      if (!re.test(v || '')) { alert(msg); return false }
+    }
+    if (!building.value) { alert('동을 선택해주세요.'); return false }
+    if (!unit.value)     { alert('호수를 입력해주세요.'); return false }
+    if (!vehicleType.value) { alert('차량종류를 선택해주세요.'); return false }
+    return true
+  }
+
   try {
+    // 데모 모드: 바로 성공 처리 (백엔드 없이도 회원가입 완료 흐름 보여주기)
+    if (isDemoMode()) {
+      if (!demoSignup()) return
+      alert(`[데모] ${name.value}님 회원가입이 완료되었습니다!\n로그인 페이지로 이동합니다.`)
+      router.push('/')
+      return
+    }
+
     const response = await axios.post('/api/users/signup?v=1', {
       loginId: loginId.value,
       password: password.value,
@@ -127,6 +154,12 @@ const signup = async () => {
       router.push('/')
     }
   } catch (error) {
+    // 백엔드 호출이 실패해도 form 검증은 통과했다면 데모 성공으로 처리
+    if (demoSignup()) {
+      alert(`[데모] ${name.value}님 회원가입이 완료되었습니다!\n로그인 페이지로 이동합니다.`)
+      router.push('/')
+      return
+    }
     const errorMsg = error.response?.data?.message || "양식을 확인해주세요.";
     alert("회원가입 실패: " + errorMsg);
   }

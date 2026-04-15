@@ -13,4 +13,10 @@ public class UserResponseDTO {
     private String loginId;
     private String name;
     private String role;
+    private String accessToken;   // JWT (login response only; null on signup)
+    private String tokenType;     // "Bearer" when accessToken present
+
+    public UserResponseDTO(Long userPk, String loginId, String name, String role) {
+        this(userPk, loginId, name, role, null, null);
+    }
 }

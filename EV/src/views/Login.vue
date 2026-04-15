@@ -59,6 +59,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { DEMO_USER, DEMO_ADMIN } from '../demo/mockData'
 
 const router = useRouter()
 const loginType = ref('user')
@@ -84,7 +85,29 @@ const login = async () => {
       return
     }
 
-    const response = await axios.post('/api/users/login', loginPayload)
+    // Demo-account bypass: matches DEMO_USER / DEMO_ADMIN locally so the
+    // portfolio demo works even when the backend is offline.
+    const asDemo = () => {
+      if (loginType.value === 'admin' &&
+          loginPayload.loginId === DEMO_ADMIN.loginId &&
+          loginPayload.password === DEMO_ADMIN.password) return DEMO_ADMIN.response
+      if (loginType.value === 'user' &&
+          loginPayload.loginId === DEMO_USER.loginId &&
+          loginPayload.password === DEMO_USER.password) return DEMO_USER.response
+      return null
+    }
+
+    let response
+    try {
+      response = await axios.post('/api/users/login', loginPayload)
+    } catch (netErr) {
+      const demoData = asDemo()
+      if (demoData) {
+        response = { status: 200, data: demoData }
+      } else {
+        throw netErr
+      }
+    }
 
     console.log('로그인 응답 데이터:', response.data)
 
@@ -95,6 +118,10 @@ const login = async () => {
       localStorage.setItem('loginId', response.data.loginId)
       localStorage.setItem('name', response.data.name)
       localStorage.setItem('role', response.data.role)
+      // JWT (백엔드가 발급한 access token). 이후 axios 인터셉터가 Authorization 헤더에 자동 부착.
+      if (response.data.accessToken) {
+        localStorage.setItem('accessToken', response.data.accessToken)
+      }
 
       alert(loginType.value === 'admin' 
         ? '관리자 로그인 성공!' 

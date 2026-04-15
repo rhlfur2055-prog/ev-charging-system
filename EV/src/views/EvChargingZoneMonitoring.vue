@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import { mockDetectionList, mockAdminQueue, isDemoMode, DEMO_STREAM_URL, DEMO_PLATE_URL, DEMO_STREAM_VIDEO } from '../demo/mockData'
 
 const retryImage = (e) => {
   const el = e.target
@@ -13,15 +14,29 @@ const retryImage = (e) => {
   }, 1500 * (tries + 1))
 }
 
-// Cloudflare Quick Tunnel URLs (EVVideoBoard.vue 와 동일)
+// Stream base URLs read from build-time env (set in Vercel project settings).
+// Defaults to empty so the placeholder shows when no stream is configured.
 const STREAM_URL_MAP = {
-  'A-01': 'https://according-lines-ccd-detector.trycloudflare.com',
-  'A-02': 'https://prince-concerts-impaired-distribute.trycloudflare.com',
-  'B-01': 'https://fence-early-monitors-layers.trycloudflare.com',
-  'B-02': 'https://return-school-tract-chicken.trycloudflare.com',
+  'A-01': import.meta.env.VITE_STREAM_A01 || '',
+  'A-02': import.meta.env.VITE_STREAM_A02 || '',
+  'B-01': import.meta.env.VITE_STREAM_B01 || '',
+  'B-02': import.meta.env.VITE_STREAM_B02 || '',
 }
 const getStationName = (i) => `${selectedBuilding.value === 'A동' ? 'A' : 'B'}-0${i}`
-const getStreamUrl = (station) => (STREAM_URL_MAP[station] || STREAM_URL_MAP['A-01']) + '/stream'
+const getStreamUrl = (station) => {
+  const base = STREAM_URL_MAP[station]
+  if (!base) return DEMO_STREAM_URL[station] || DEMO_STREAM_URL['A-01']
+  return base.replace(/\/$/, '') + '/stream'
+}
+const getPlateStreamUrl = (station) => {
+  const base = STREAM_URL_MAP[station]
+  if (!base) return DEMO_PLATE_URL[station] || DEMO_PLATE_URL['A-01']
+  return base.replace(/\/$/, '') + '/stream'
+}
+const useVideoDemo = (station) => {
+  if (STREAM_URL_MAP[station]) return null
+  return DEMO_STREAM_VIDEO[station] || DEMO_STREAM_VIDEO['A-01']
+}
 
 // ⏰ 실시간 날짜 및 시간 로직
 const currentDate = ref('');
@@ -90,54 +105,69 @@ const getWarningLabel = (item) => {
   return null;
 };
 
-const fetchData = async (building) => {
-  try {
-    console.log("🔥 API 호출됨", building)
+const applyDetectionData = (data, building) => {
+  const list = (data.chargingStatusList || []).filter(it => {
+    if (!building) return true;
+    const code = building.startsWith('A') ? 'A' : 'B';
+    return String(it.station || '').startsWith(code);
+  });
+  chargingStatusList.value = list;
+  const newAlerts = list
+    .filter(item => getWarningLabel(item) !== null)
+    .map(item => ({
+      id: Date.now() + item.station,
+      time: currentTime.value,
+      msg: `[${item.station}] ${getWarningLabel(item)} 감지!`,
+      type: item.status === '비정상' ? 'danger' : 'warning'
+    }));
+  alertLogs.value = [...newAlerts, ...(data.alertLogs || [])].slice(0, 10);
+};
 
+const fetchData = async (building) => {
+  if (isDemoMode()) { applyDetectionData(mockDetectionList, building); return; }
+  try {
     const res = await axios.get("http://localhost:8080/api/detection/list", {
       params: { building }
     });
-    
-    console.log("🔥 응답:", res.data);
-
-    chargingStatusList.value = res.data.chargingStatusList;
-    
-    // 🔔 [실시간 알림 로직] 백엔드에서 온 warningMsg를 기반으로 알림 생성
-    const newAlerts = chargingStatusList.value
-      .filter(item => getWarningLabel(item) !== null)
-      .map(item => ({
-        id: Date.now() + item.station,
-        time: currentTime.value,
-        msg: `[${item.station}] ${getWarningLabel(item)} 감지!`,
-        type: item.status === '비정상' ? 'danger' : 'warning'
-      }));
-
-    // 기존 백엔드 알림 로그와 새로 감지된 알림을 합침 (최신순 10개 유지)
-    alertLogs.value = [...newAlerts, ...(res.data.alertLogs || [])].slice(0, 10);
-
+    if (!res.data || !Array.isArray(res.data.chargingStatusList) || res.data.chargingStatusList.length === 0) {
+      throw new Error('empty');
+    }
+    applyDetectionData(res.data, building);
   } catch (err) {
-    console.error("데이터 불러오기 실패", err);
+    console.warn('[demo] detection fallback');
+    applyDetectionData(mockDetectionList, building);
   }
 };
 
 watch(selectedBuilding, (newBuilding) => fetchData(newBuilding));
 
+const mapWaiting = (rows) => rows.map(item => ({
+  station: item.chargerId,
+  rank: item.rank,
+  plate: item.carNumber,
+  time: item.estimatedMinutes + '분',
+}));
+
+const handleLogout = () => {
+  if (confirm('로그아웃 하시겠습니까?')) {
+    localStorage.removeItem('userPk');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('loginId');
+    localStorage.removeItem('name');
+    localStorage.removeItem('role');
+    router.push('/');
+  }
+};
+
 const fetchWaitingList = async () => {
-  console.log("🔥 관리자 대기열 호출됨")
-
+  if (isDemoMode()) { waitingList.value = mapWaiting(mockAdminQueue); return; }
   try {
-    const res = await axios.get('http://localhost:8080/api/admin/queue/waiting')
-    console.log("🔥 관리자 queue:", res.data)
-
-    waitingList.value = res.data.map(item => ({
-      station: item.chargerId,          // A-01
-      rank: item.rank,                  // 순번
-      plate: item.carNumber,            // 차량번호
-      time: item.estimatedMinutes + '분' // 예상시간
-    }));
-
+    const res = await axios.get('http://localhost:8080/api/admin/queue/waiting');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    waitingList.value = rows.length ? mapWaiting(rows) : mapWaiting(mockAdminQueue);
   } catch (err) {
-    console.error('관리자 대기열 불러오기 실패', err);
+    console.warn('[demo] admin-queue fallback');
+    waitingList.value = mapWaiting(mockAdminQueue);
   }
 };
 </script>
@@ -161,9 +191,13 @@ const fetchWaitingList = async () => {
       <button @click="$router.push('/EvDatabaseUsage')" class="nav-btn-blue">
         📊 DB 사용량
       </button>
-      
+
       <button @click="$router.push('/EVVideoBoard')" class="nav-btn-green">
         <span class="live-dot"></span> 영상 대시보드
+      </button>
+
+      <button @click="handleLogout" class="nav-btn-blue">
+        로그아웃
       </button>
     </div>
   </header>
@@ -176,8 +210,14 @@ const fetchWaitingList = async () => {
             {{ selectedBuilding === 'A동' ? 'A' : 'B' }}-0{{i}}
           </span>
           <div class="parking-img-box">
+            <video
+              v-if="useVideoDemo(getStationName(i))"
+              :src="useVideoDemo(getStationName(i))"
+              class="parking-img"
+              autoplay muted loop playsinline
+            ></video>
             <img
-              v-if="getStreamUrl(getStationName(i))"
+              v-else-if="getStreamUrl(getStationName(i))"
               :src="getStreamUrl(getStationName(i))"
               class="parking-img"
               alt="LIVE STREAM"

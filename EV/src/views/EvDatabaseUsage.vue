@@ -78,6 +78,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import Chart from 'chart.js/auto';
+import { makeLiveDbUsage, isDemoMode } from '../demo/mockData';
 
 const router = useRouter();
 const goToMonitoring = () => { router.push({ name: 'EvChargingZoneMonitoring' }); };
@@ -156,31 +157,31 @@ const renderChart = () => {
   });
 };
 
+// Build the 4 summary tiles from any payload shape (real or mock).
+const toSummary = (src) => ([
+  { label: '인식 정확도',    value: src.accuracy      || '0.0%',    sub: 'detection_log confidence 평균', colorClass: 'success-text' },
+  { label: '인식 오차율',    value: src.errorRate     || '100.0%',  sub: '100 - 인식 정확도',               colorClass: 'error-text', error: true },
+  { label: '전체 할당 용량', value: src.totalCapacity || '0 MB',    sub: 'PostgreSQL 17 기준',             icon: '' },
+  { label: 'DB 연결 상태',   value: src.dbStatus      || '연결 정상', sub: '서버 연결 상태',                  colorClass: 'healthy-text' },
+]);
+
+const applyDbUsage = async (payload) => {
+  databaseList.value = Array.isArray(payload.databaseList) ? payload.databaseList : [];
+  summaryData.value  = toSummary(payload);
+  await nextTick();
+  renderChart();
+};
+
 const fetchDbUsage = async () => {
+  if (isDemoMode()) { await applyDbUsage(makeLiveDbUsage()); return; }
   try {
     const res = await axios.get("http://localhost:8080/api/db/usage");
-    databaseList.value = Array.isArray(res.data.databaseList) ? res.data.databaseList : [];
-    summaryData.value = [
-      { label: '인식 정확도', value: res.data.accuracy || '0.0%', sub: '', colorClass: 'success-text' },
-      { label: '인식 오차율', value: res.data.errorRate || '100.0%', sub: '', colorClass: 'error-text', error: true },
-      { label: '전체 할당 용량', value: res.data.totalCapacity || '0 MB', sub: 'Oracle 21c 기준', icon: '' },
-      { label: 'DB 연결 상태', value: res.data.dbStatus || '연결 오류', sub: '서버 연결 상태', colorClass: 'healthy-text' }
-    ];
-    await nextTick();
-    renderChart();
+    const ok = res.data && Array.isArray(res.data.databaseList) && res.data.databaseList.length > 0;
+    if (!ok) throw new Error('empty');
+    await applyDbUsage(res.data);
   } catch (err) {
-    console.error("❌ DB 사용량 데이터 호출 실패:", err);
-    summaryData.value = [
-      { label: '인식 정확도', value: '0.0%', sub: 'confidence 기준 실시간 DB 집계', colorClass: 'success-text' },
-      { label: '인식 오차율', value: '100.0%', sub: '100 - 인식정확도', colorClass: 'error-text', error: true },
-      { label: '전체 할당 용량', value: '0 MB', sub: 'Oracle 21c 기준', icon: '' },
-      { label: 'DB 연결 상태', value: '연결 오류', sub: '서버 연결 상태', colorClass: 'error-text', error: true }
-    ];
-    databaseList.value = [];
-    if (usageChart) {
-      usageChart.destroy();
-      usageChart = null;
-    }
+    console.warn('[demo] db-usage fallback');
+    await applyDbUsage(makeLiveDbUsage());
   }
 };
 

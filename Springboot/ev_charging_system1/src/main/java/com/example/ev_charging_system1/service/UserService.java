@@ -8,7 +8,9 @@ import com.example.ev_charging_system1.entity.User;
 import com.example.ev_charging_system1.entity.Vehicle;
 import com.example.ev_charging_system1.repository.UserRepository;
 import com.example.ev_charging_system1.repository.VehicleRepository;
+import com.example.ev_charging_system1.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -18,14 +20,19 @@ public class UserService {
     private final UserRepository userRepository;
     private final VehicleService vehicleService;
     private final VehicleRepository vehicleRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
-    // 회원가입
     public UserResponseDTO signup(UserSignupDTO dto) {
+        if (userRepository.findByLoginId(dto.getLoginId()).isPresent()) {
+            throw new IllegalArgumentException("이미 존재하는 아이디입니다.");
+        }
 
-        // 1️⃣ 사용자 저장
         User user = new User();
         user.setLoginId(dto.getLoginId());
-        user.setPassword(dto.getPassword());
+        // BCrypt hash. Reason: store-only-hashes; existing plain-text rows
+        // become unusable on next login — see migration note in V1__init.sql.
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setName(dto.getName());
         user.setPhone(dto.getPhone());
         user.setBuilding(dto.getBuilding());
@@ -34,15 +41,12 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
 
-        // 2️⃣ 차량 저장
         Vehicle vehicle = new Vehicle();
         vehicle.setUserPk(savedUser.getUserPk());
         vehicle.setPlateNumber(dto.getPlateNumber());
         vehicle.setVehicleType(dto.getVehicleType());
-
         vehicleService.saveVehicle(vehicle);
 
-        // 3️⃣ 응답 반환
         return new UserResponseDTO(
                 savedUser.getUserPk(),
                 savedUser.getLoginId(),
@@ -51,27 +55,38 @@ public class UserService {
         );
     }
 
-    // 로그인
     public UserResponseDTO login(LoginDTO dto) {
-
         User user = userRepository.findByLoginId(dto.getLoginId())
                 .orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다."));
 
-        if (!user.getPassword().trim().equals(dto.getPassword().trim())) {
+        boolean ok;
+        String stored = user.getPassword() == null ? "" : user.getPassword().trim();
+        if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
+            ok = passwordEncoder.matches(dto.getPassword(), stored);
+        } else {
+            // Legacy plain-text fallback (one-shot upgrade): if it matches, re-hash and persist.
+            ok = stored.equals(dto.getPassword().trim());
+            if (ok) {
+                user.setPassword(passwordEncoder.encode(dto.getPassword()));
+                userRepository.save(user);
+            }
+        }
+        if (!ok) {
             throw new RuntimeException("비밀번호가 틀렸습니다.");
         }
 
+        String token = jwtUtil.issue(user.getUserPk(), user.getLoginId(), user.getRole());
         return new UserResponseDTO(
                 user.getUserPk(),
                 user.getLoginId(),
                 user.getName(),
-                user.getRole()
+                user.getRole(),
+                token,
+                "Bearer"
         );
     }
 
-    // 사용자 프로필 조회
     public UserProfileDTO getUserProfile(Long userPk) {
-
         User user = userRepository.findById(userPk)
                 .orElseThrow(() -> new RuntimeException("사용자 없음"));
 

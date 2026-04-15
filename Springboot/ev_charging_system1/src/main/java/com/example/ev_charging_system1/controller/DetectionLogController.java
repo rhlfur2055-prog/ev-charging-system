@@ -20,15 +20,26 @@ public class DetectionLogController {
     private final PythonService pythonService;
 
     @GetMapping("/start")
-    public ResponseEntity<String> startRecognition() {
+    public ResponseEntity<?> startRecognition() {
         log.info("🔔 시스템 가동 신호 수신: 파이썬 엔진을 실행합니다.");
         try {
-            pythonService.runIdentification();
-            return ResponseEntity.ok("🚀 파이썬 엔진 가동 시작!");
+            java.util.List<String> failed = pythonService.runIdentification();
+            if (failed.isEmpty()) {
+                return ResponseEntity.ok(java.util.Map.of("status", "ok", "message", "🚀 파이썬 엔진 가동 시작!"));
+            }
+            return ResponseEntity.status(207).body(java.util.Map.of(
+                    "status", "partial",
+                    "failed", failed,
+                    "message", "일부 엔진 기동 실패"));
         } catch (Exception e) {
             log.error("❌ 엔진 가동 실패: ", e);
-            return ResponseEntity.status(500).body("❌ 엔진 가동 실패: " + e.getMessage());
+            return ResponseEntity.status(500).body(java.util.Map.of("status", "error", "message", e.getMessage()));
         }
+    }
+
+    @GetMapping("/status")
+    public ResponseEntity<?> engineStatus() {
+        return ResponseEntity.ok(pythonService.status());
     }
 
     @PostMapping("/yolo/detect")

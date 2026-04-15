@@ -6,6 +6,9 @@
         <button @click="router.push({ name: 'EvChargingZoneMonitoring' })" class="nav-back-btn">
           <span class="icon">📊</span> 모니터링 대시보드
         </button>
+        <button @click="handleLogout" class="nav-back-btn">
+          로그아웃
+        </button>
       </div>
     </header>
 
@@ -48,8 +51,14 @@
             <div class="video-header">
               CCTV {{ cctv.station }} <span class="status-dot"></span>
             </div>
+            <video
+              v-if="cctv && cctv.station && useVideoDemo(cctv.station)"
+              :src="useVideoDemo(cctv.station)"
+              class="video-img"
+              autoplay muted loop playsinline
+            ></video>
             <img
-              v-if="cctv && cctv.station"
+              v-else-if="cctv && cctv.station"
               :src="getStreamUrl(cctv.station)"
               class="video-img"
               alt="LIVE VIDEO"
@@ -142,17 +151,29 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import Chart from 'chart.js/auto'
 import axios from 'axios'
+import { mockDashboard, isDemoMode, DEMO_STREAM_URL, DEMO_STREAM_VIDEO } from '../demo/mockData'
 
-// Cloudflare Quick Tunnel URLs (재기동 시 새로 발급받아 교체 필요)
+// Stream base URLs are read from build-time env (Vercel env vars). This kills
+// the old Quick Tunnel hardcode — set VITE_STREAM_A01..B02 to your fixed
+// public URLs (Cloudflare named tunnel, nginx reverse proxy, etc.).
 const STREAM_URL_MAP = {
-  'A-01': 'https://according-lines-ccd-detector.trycloudflare.com',
-  'A-02': 'https://prince-concerts-impaired-distribute.trycloudflare.com',
-  'B-01': 'https://fence-early-monitors-layers.trycloudflare.com',
-  'B-02': 'https://return-school-tract-chicken.trycloudflare.com',
+  'A-01': import.meta.env.VITE_STREAM_A01 || '',
+  'A-02': import.meta.env.VITE_STREAM_A02 || '',
+  'B-01': import.meta.env.VITE_STREAM_B01 || '',
+  'B-02': import.meta.env.VITE_STREAM_B02 || '',
 }
 
 const getStreamUrl = (stationName) => {
-  return (STREAM_URL_MAP[stationName] || STREAM_URL_MAP['A-01']) + '/stream'
+  const base = STREAM_URL_MAP[stationName]
+  // Demo / no stream configured → serve a static CCTV still from /public/demo.
+  if (!base) return DEMO_STREAM_URL[stationName] || DEMO_STREAM_URL['A-01']
+  return base.replace(/\/$/, '') + '/stream'
+}
+// Returns an MP4 clip for demo playback (rendered via <video>). Null when a
+// real MJPEG stream is configured so the MJPEG branch keeps rendering.
+const useVideoDemo = (stationName) => {
+  if (STREAM_URL_MAP[stationName]) return null
+  return DEMO_STREAM_VIDEO[stationName] || DEMO_STREAM_VIDEO['A-01']
 }
 
 // (기존 getPythonPort 는 호환 유지, 타 파일에서 쓰일 경우 대비)
@@ -227,32 +248,43 @@ const initCharts = () => {
   if (cm) miniChart = new Chart(cm, { type: 'line', data: { labels: chartData.value.powerLabels, datasets: [{ label: '점유율', data: chartData.value.occupancy, borderColor: '#76c7a0', borderWidth: 2, pointRadius: 2, fill: true, backgroundColor: 'rgba(118, 199, 160, 0.1)', tension: 0.4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } } } });
 }
 
+const applyDashboard = async (data) => {
+  if (Array.isArray(data.cctv)) {
+    cctvList.value = data.cctv.map(item => ({
+      station: item.station,
+      plateNumber: item.plate || item.plateNumber || "인식중...",
+      status: (item.warningMsg && item.warningMsg !== "-") ? item.warningMsg : (item.status || "waiting"),
+      imageUrl: item.imageUrl
+    }));
+  }
+  summary.value   = data.summary  || summary.value;
+  machines.value  = data.machines || machines.value;
+  chartData.value = data.charts   || chartData.value;
+  await nextTick();
+  if (chartData.value.powerLabels) initCharts();
+};
+
+const handleLogout = () => {
+  if (confirm('로그아웃 하시겠습니까?')) {
+    localStorage.removeItem('userPk');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('loginId');
+    localStorage.removeItem('name');
+    localStorage.removeItem('role');
+    router.push('/');
+  }
+};
+
 const fetchDashboard = async () => {
+  if (isDemoMode()) { await applyDashboard(mockDashboard); return; }
   try {
     const res = await axios.get('http://localhost:8080/api/dashboard');
-    const data = res.data;
-
-    if (data.cctv) {
-      cctvList.value = data.cctv.map(item => {
-        return {
-          station: item.station,
-          plateNumber: item.plate || item.plateNumber || "인식중...",
-          // 🚀 [연동] 관리자 화면의 경고 메시지가 있으면 우선적으로 뱃지에 표시
-          status: (item.warningMsg && item.warningMsg !== "-") ? item.warningMsg : (item.status || "waiting"),
-          imageUrl: item.imageUrl
-        };
-      });
-    }
-
-    // 🚀 [복구] 하단 데이터 및 기계 상태 매핑 유지
-    summary.value = data.summary || summary.value;
-    machines.value = data.machines || machines.value; 
-    chartData.value = data.charts || chartData.value;
-
-    await nextTick();
-    if (chartData.value.powerLabels) initCharts();
+    const ok = res.data && (Array.isArray(res.data.cctv) ? res.data.cctv.length > 0 : false);
+    if (!ok) throw new Error('empty');
+    await applyDashboard(res.data);
   } catch (err) {
-    console.error("데이터 연동 실패:", err);
+    console.warn('[demo] dashboard fallback');
+    await applyDashboard(mockDashboard);
   }
 }
 

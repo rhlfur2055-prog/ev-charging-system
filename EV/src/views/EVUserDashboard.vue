@@ -167,6 +167,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import { mockUserProfile, mockHistory, mockQueueWaiting, isDemoMode } from '../demo/mockData';
 
 const router = useRouter();
 const currentTime = ref('');
@@ -218,39 +219,72 @@ watch(chargePercent, (newVal) => {
   }
 });
 
+// Demo fallbacks: when the backend is offline, substitute plausible sample
+// data so the dashboard never renders empty during a portfolio demo.
 const fetchUserProfile = async () => {
-  if (!loginUserPk.value) return;
+  if (isDemoMode()) {
+    userProfile.value = { ...mockUserProfile, name: localStorage.getItem('name') || mockUserProfile.name };
+    return;
+  }
   try {
-    const res = await axios.get('http://localhost:8080/api/users/profile', { params: { userPk: loginUserPk.value } });
+    const res = await axios.get('http://localhost:8080/api/users/profile',
+      loginUserPk.value ? { params: { userPk: loginUserPk.value } } : {});
     userProfile.value = res.data;
-  } catch (err) { console.error('프로필 로드 실패'); }
+  } catch (err) {
+    console.warn('[demo] profile fallback');
+    userProfile.value = { ...mockUserProfile, name: localStorage.getItem('name') || mockUserProfile.name };
+  }
 };
 
 const fetchHistory = async () => {
-  if (!loginUserPk.value) return;
-  try {
-    const res = await axios.get('http://localhost:8080/api/history/my', { params: { userPk: loginUserPk.value } });
-    historyData.value = res.data.map(item => ({
+  if (isDemoMode()) {
+    historyData.value = mockHistory.map(item => ({
       stationNumber: item.stationNumber,
       formattedTime: item.startTime.substring(5, 16).replace('T', ' '),
+      status: item.status,
+    }));
+    return;
+  }
+  try {
+    const res = await axios.get('http://localhost:8080/api/history/my',
+      loginUserPk.value ? { params: { userPk: loginUserPk.value } } : {});
+    historyData.value = (res.data || []).map(item => ({
+      stationNumber: item.stationNumber,
+      formattedTime: (item.startTime || '').substring(5, 16).replace('T', ' '),
       status: item.status || '완료'
     }));
-  } catch (err) { console.error('기록 로드 실패'); }
+    if (historyData.value.length === 0) throw new Error('empty');
+  } catch (err) {
+    console.warn('[demo] history fallback');
+    historyData.value = mockHistory.map(item => ({
+      stationNumber: item.stationNumber,
+      formattedTime: item.startTime.substring(5, 16).replace('T', ' '),
+      status: item.status,
+    }));
+  }
 };
 
 const fetchQueue = async () => {
+  if (isDemoMode()) { queueData.value = mockQueueWaiting; return; }
   try {
     const res = await axios.get('http://localhost:8080/api/queue/waiting');
-    queueData.value = res.data;
-  } catch (err) { console.error(err); }
+    queueData.value = Array.isArray(res.data) ? res.data : [];
+    if (queueData.value.length === 0) throw new Error('empty');
+  } catch (err) {
+    console.warn('[demo] queue fallback');
+    queueData.value = mockQueueWaiting;
+  }
 };
 
 const checkMyQueue = async () => {
+  if (isDemoMode()) { isQueued.value = false; return; }
   if (!loginUserPk.value) return;
   try {
     const res = await axios.get('http://localhost:8080/api/queue/my', { params: { userPk: loginUserPk.value } });
-    isQueued.value = res.data;
-  } catch (err) { console.error(err); }
+    isQueued.value = !!res.data;
+  } catch (err) {
+    isQueued.value = false;
+  }
 };
 
 const refreshAllData = () => {
@@ -290,6 +324,10 @@ const cancelQueue = async () => {
 const handleLogout = () => {
   if (confirm('로그아웃 하시겠습니까?')) {
     localStorage.removeItem('userPk');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('loginId');
+    localStorage.removeItem('name');
+    localStorage.removeItem('role');
     loginUserPk.value = null;
     router.push('/');
   }
